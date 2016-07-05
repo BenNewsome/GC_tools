@@ -49,7 +49,6 @@ class species:
         import os
         import csv
         self.name = name
-        self.help = help(self)
         species_filename = os.path.dirname(__file__) + "/data/species.csv"
 
         try:
@@ -83,6 +82,12 @@ class species:
             print "Warning:"
             print "In MChem_tools.py class Species: Species " + name + " not found in species CSV file"
             return
+    def help(self):
+        '''
+        Another way to get help for the class.
+        '''
+        help(self)
+        return
                                                                     
                                                                                    
 
