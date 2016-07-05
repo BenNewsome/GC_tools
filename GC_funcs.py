@@ -94,6 +94,18 @@ def get_species_data( netCDF_file, species ):
     variable_data = get_variable_data( netCDF_file, variable_name)
     return variable_data
 
+def get_species_rmm( species_name ):
+    """
+    Gets a species rmm.
+    """
+    from .species import species as get_species
+    
+    species = get_species( species_name)
+    species_rmm = species.RMM
+    return species_rmm
+    
+    
+
 def get_tropospheric_species_mass( netCDF_file, species ):
     """
     Return the mass of a species in each gridbox in gramms.
@@ -103,17 +115,17 @@ def get_tropospheric_species_mass( netCDF_file, species ):
     from .GC_funcs import get_species_data
     from .GC_funcs import get_air_mols
     from .GC_funcs import get_trop_time
-    from MChem_tools.MChem_tools import species as get_species_info
+    from .GC_funcs import get_species_rmm
 
     logging.info('Getting the tropospheric {species} mass.'.format(species=species))
 
     species_data = get_species_data( netCDF_file, species )
     trop_time = get_trop_time( netCDF_file )
-    species_info = get_species_info( species )
+    species_rmm = get_species_rmm(species)
 
     air_moles = get_air_mols( netCDF_file)
     species_moles = np.multiply(air_moles, np.divide(species_data,1E9))
-    species_mass = np.multiply( species_moles, species_info.RMM )
+    species_mass = np.multiply( species_moles, species_rmm )
 
     trop_species_mass = np.multiply( species_mass[:,:,:38], trop_time )
     return trop_species_mass

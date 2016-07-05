@@ -60,6 +60,11 @@ def test_get_trop_time():
 #    assert( len(air_mass.shape) == 4 ), 'trop time shape is wrong.'
     return
 
+def test_get_species_rmm():
+    species_rmm = GC_funcs.get_species_rmm( 'O3' )
+    assert species_rmm == 47.98474386, "Species rmm is incorect"
+    return
+
 def test_get_tropospheric_burden():
     import numpy as np
     tropospheric_burden = GC_funcs.get_tropospheric_burden( netCDF_file, 'O3' )
