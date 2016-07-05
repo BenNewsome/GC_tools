@@ -218,6 +218,8 @@ def get_tropospheric_total_PL(netCDF_file, group_name, group_RMM):
     """
     Get the total amount of tropospheric producution for a group in Tg.
     """
+    logging.debug("Getting the total tropsopheric PL for {variable}".format(variable=group_name))
+
     from .GC_funcs import get_tropospheric_PL
     import numpy as np
     PL = get_tropospheric_PL( netCDF_file, group_name, group_RMM)
