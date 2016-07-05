@@ -67,6 +67,7 @@ def multi_line_plot( dataset, x_ticks=None, y_ticks=None, plot_settings=None ):
 
     figure.savefig(plot_settings.filename)
     print "figure saved to {filename}".format(filename=plot_settings.filename)
+    logging.info("figure saved to {filename}".format(filename=plot_settings.filename))
 
     return
 
