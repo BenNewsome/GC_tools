@@ -8,8 +8,6 @@ from .. import io
 import logging
 
 # Make sure the files are downloaded
-import get_test_files
-get_test_files.get_all_files()
 
 logging.basicConfig(filename='test.log', level=logging.DEBUG)
 
@@ -22,6 +20,9 @@ def test_open_netCDF():
        
     import netCDF4
     import os
+
+    assert os.path.isfile("test_files/ctm.nc"), "Couldnt find the test ctm.nc file.  \
+    have you run the setup.py ?"
 
     test_netCDF_data = netCDF4.Dataset(filename='test_files/ctm.nc')
     test_bpch_data = io.open_netCDF(folder='test_files',filename='temp.nc')
