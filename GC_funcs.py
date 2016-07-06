@@ -182,7 +182,7 @@ def get_tropospheric_PL(netCDF_file, group_name, group_RMM):
     """
     Get the amount per gridbox of tropsopheric production for a group in Tg per gridbox.
     """
-    logging.info("Getting the tropospheric prod/loss for {variable}".format(variable=group_name))
+    logging.info("Getting the tropospheric prod/loss for {var}".format(var=group_name))
 
     import numpy as np
     from .GC_funcs import get_variable_data
@@ -200,16 +200,31 @@ def get_tropospheric_PL(netCDF_file, group_name, group_RMM):
     air_mols = get_air_mols( netCDF_file )
     air_mass = get_air_mass( netCDF_file )
     trop_time = get_trop_time( netCDF_file )
-    volume = get_volume( netCDF_file )/1E6 # Get in cm^3
+    volume = get_volume( netCDF_file )*1E6 # Get in cm^3
 
     # Convert from molec/cm3/s to molec/s
     PL = np.multiply( PL, volume[:,:,:38])
 
-    # Convert from molec/s to gram/s
+    # Convert from molec/s to moles/s
+    avagadro = 6.0221409e+23
+    PL = np.divide( PL, avagadro )
+
+    # Convert from moles/s to gram/s
     PL = np.multiply(PL, group_RMM) 
 
-    PL = np.multiply( PL, air_mass[:,:,:38] )
+    # Convert from gram/s to gram/y
+    year = 365.25*24*60*60
+    PL = np.multiply(PL, year)
+
+    # Get only the tropospheric part
     PL = np.multiply( PL, trop_time )
+
+    # Convert from gram/y to TG/y
+    PL = np.divide( PL, 1E12 )
+    
+
+
+#    PL = np.multiply( PL, air_mass[:,:,:38] )
     
     return  PL 
     
@@ -223,6 +238,7 @@ def get_tropospheric_total_PL(netCDF_file, group_name, group_RMM):
     from .GC_funcs import get_tropospheric_PL
     import numpy as np
     PL = get_tropospheric_PL( netCDF_file, group_name, group_RMM)
+    print PL.shape
     PL = np.sum(PL)
 
     PL = float(PL)
