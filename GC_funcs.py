@@ -5,6 +5,7 @@ All opperations are performed on a netCDF file created by AC_tools.io
 """
 
 import logging
+import numpy as np
 
 def get_variable_data( netCDF_file, variable ):
     """
@@ -69,6 +70,7 @@ def get_air_mass( netCDF_file ):
     from .GC_funcs import get_variable_data
     logging.info('Getting the air mass.')
     air_mass = get_variable_data(netCDF_file, 'BXHGHT_S__AD')
+
     return air_mass
     
 
@@ -101,7 +103,12 @@ def get_species_rmm( species_name ):
     from .species import species as get_species
     
     species = get_species( species_name)
-    species_rmm = species.RMM
+    try:
+        species_rmm = species.RMM
+    except:
+        logging.warning("No RMM found for {species_name}. Assuming mass of 1.0"\
+            .format(species_name=species_name))
+        species_rmm = 1.0
     return species_rmm
     
     
@@ -111,7 +118,6 @@ def get_tropospheric_species_mass( netCDF_file, species ):
     Return the mass of a species in each gridbox in gramms.
     """
     
-    import numpy as np
     from .GC_funcs import get_species_data
     from .GC_funcs import get_air_mols
     from .GC_funcs import get_trop_time
@@ -127,7 +133,12 @@ def get_tropospheric_species_mass( netCDF_file, species ):
     species_moles = np.multiply(air_moles, np.divide(species_data,1E9))
     species_mass = np.multiply( species_moles, species_rmm )
 
-    trop_species_mass = np.multiply( species_mass[:,:,:38], trop_time )
+    if len(species_mass.shape)==3:
+        trop_species_mass = np.multiply( species_mass[:,:,:38], trop_time )
+    elif len(species_mass.shape)==4:
+        trop_species_mass = np.multiply( species_mass[:,:,:,:38], trop_time )
+    else:
+        logging.error("species_mass is the wrong shape")
     return trop_species_mass
 
 
@@ -135,12 +146,11 @@ def get_air_mols( netCDF_file ):
     """"
     Get the number of molecules in each gridbox.
     """
-    import numpy as np
     from .GC_funcs import get_air_mass
 
     air_mass = get_air_mass( netCDF_file )
     # Air density for N2 + O2
-    air_moles = np.divide(np.multiply(air_mass,1E3) , (0.78*28.0 + 0.22*32))
+    air_moles = np.divide(np.multiply(air_mass,1E3) , (0.78*28.0 + 0.22*32.0))
 
     return air_moles
 
@@ -149,14 +159,17 @@ def get_tropospheric_burden( netCDF_file, variable ):
     """
     Get the tropospheic burden in Tg from the provided netCDf file.
     """
-    import numpy as np
     from .GC_funcs import get_tropospheric_species_mass
 
     trop_species_mass = get_tropospheric_species_mass( netCDF_file, variable )
 
+    # Average over all times if time dimension exists
+    if len(trop_species_mass.shape)==4:
+        trop_species_mass = np.mean(trop_species_mass, axis=0)
+
+
     # Get the total in Tg.
-    total_trop_species_mass = np.sum(trop_species_mass)
-    total_trop_species_mass = total_trop_species_mass / 1E12
+    total_trop_species_mass = np.sum(trop_species_mass) / 1E12
 
     return float(total_trop_species_mass)
 
@@ -165,7 +178,6 @@ def get_volume( netCDF_file ):
     Get the volume of ell gridboxes in m^3.
     """
     from .GC_funcs import get_variable_data
-    import numpy as np
 
     height = get_variable_data(netCDF_file, "BXHGHT_S__BXHEIGHT")
     area = get_variable_data(netCDF_file, "DXYP__DXYP")
@@ -176,57 +188,153 @@ def get_volume( netCDF_file ):
     # Move time back to final axis
     volume = np.rollaxis(volume, 0, np.size(volume.shape))    
 
+    if (len(volume.shape) == 5):
+        volume = volume[:,:,:,:,0]
+
     return volume
+
+def get_total_OH_PL(netCDF_file, prod_or_loss):
+    """
+    get the total amount of tropospheric OH production and loss.
+    """
+    prod = ['p', 'P', 'prod', 'Prod', 'PROD']
+    loss = ['l', 'L', 'loss', 'Loss', 'LOSS']
+    if prod_or_loss in prod:
+        prod_loss = 0
+    elif prod_or_loss in loss:
+        prod_loss = 1
+    else:
+        assert "{input_prodloss} not a known type. Should be one of\
+        of the following: {PL_list}".format(
+            input_prodloss = prod_or_loss,
+            PL_list = prod + loss,
+            )
+
+
+            
+    
+    from .GC_funcs import get_variable_data
+    OH_PL = get_variable_data( netCDF_file, 'CHEM_L_S__OH')
+    OH_PL = OH_PL[prod_loss,...]
+    
+    print OH_PL.shape
+
+    from .GC_funcs import molec_cm3_to_Tg
+    from .GC_funcs import get_volume
+
+    volume = get_volume(netCDF_file)
+
+    OH_RMM = 17.0
+    arr = molec_cm3_to_Tg( OH_PL, volume, OH_RMM )
+
+    from .GC_funcs import get_trop_time
+    trop_time = get_trop_time( netCDF_file )
+
+    arr = np.multiply(arr, trop_time)
+
+    if len(arr.shape)==4:
+        arr = np.mean(arr, axis=0)
+    arr = np.sum(arr)
+
+    return arr
+
+
+    
+    
+
+
+
+#def get_total_HO2_PL(netCDF_file):
+
     
 def get_tropospheric_PL(netCDF_file, group_name, group_RMM):
     """
-    Get the amount per gridbox of tropsopheric production for a group in Tg per gridbox.
+    Get the amount per gridbox of tropsopheric production for 
+    a group in Tg per gridbox.
     """
-    logging.info("Getting the tropospheric prod/loss for {var}".format(var=group_name))
+    logging.info("Getting the tropospheric prod/loss for {var}"\
+                .format(var=group_name))
 
-    import numpy as np
     from .GC_funcs import get_variable_data
     from .GC_funcs import get_air_mass
     from .GC_funcs import get_trop_time
     from .GC_funcs import get_air_mols
     from .GC_funcs import get_volume
+    from .GC_funcs import molec_cm3_s_to_Tg_year
 
     assert isinstance(group_name, str), "Invalid PL group name. Not a string."
     assert isinstance(group_RMM, float), "Group RMM not a float."
 
     variable_name = "PORL_L_S__"+group_name
     
-    PL = get_variable_data( netCDF_file, variable_name )
+    arr = get_variable_data( netCDF_file, variable_name )
     air_mols = get_air_mols( netCDF_file )
     air_mass = get_air_mass( netCDF_file )
     trop_time = get_trop_time( netCDF_file )
     volume = get_volume( netCDF_file )*1E6 # Get in cm^3
 
-    # Convert from molec/cm3/s to molec/s
-    PL = np.multiply( PL, volume[:,:,:38])
 
-    # Convert from molec/s to moles/s
+    arr = molec_cm3_s_to_Tg_year( arr, volume, group_RMM )
+
+
+
+    # Get only the tropospheric part
+    arr = np.multiply( arr, trop_time )
+    
+    return  arr
+
+def molec_cm3_to_Tg( arr, volume, group_RMM):
+    """
+    converts an array from molec / cm3 to Tg .
+    arr = array
+    volume = volume of gridboxs
+    group_RMM = relative molecular mass of the species
+    """
+
+    assert (len(arr.shape) in [3,4]),\
+         "The array shape of {shape} is not supported"\
+         .format(shape=arr.shape)
+
+    assert (len(volume.shape) in [3,4]),\
+         "The volume shape of {shape} is not supported"\
+         .format(shape=volume.shape)
+    assert isinstance( group_RMM, float), "Group RMM is not a float"
+    
+    
+    # Convert from molec/cm3 to molec
+    if len(volume.shape)==3:
+        arr = np.multiply( arr, volume[:,:,:38])
+    elif len(volume.shape)==4:
+        arr = np.multiply( arr, volume[:,:,:,:38])
+
+    # Convert from molec to moles
     avagadro = 6.0221409e+23
-    PL = np.divide( PL, avagadro )
+    arr = np.divide( arr, avagadro )
 
-    # Convert from moles/s to gram/s
-    PL = np.multiply(PL, group_RMM) 
+    # Convert from moles to gram
+    arr = np.multiply(arr, group_RMM) 
+
+    # Convert from gram to TG
+    arr = np.divide( arr, 1E12 )
+
+    return arr
+
+def molec_cm3_s_to_Tg_year( arr, volume, group_RMM ):
+    """
+    converts an array from molec / cm3 / s to Tg year.
+    arr = array
+    volume = volume of gridboxs
+    group_RMM = relative molecular mass of the species
+    """
+
+    from .GC_funcs import molec_cm3_to_Tg
+    arr = molec_cm3_to_Tg( arr, volume, group_RMM )
 
     # Convert from gram/s to gram/y
     year = 365.25*24*60*60
-    PL = np.multiply(PL, year)
+    arr = np.multiply(arr, year)
 
-    # Get only the tropospheric part
-    PL = np.multiply( PL, trop_time )
-
-    # Convert from gram/y to TG/y
-    PL = np.divide( PL, 1E12 )
-    
-
-
-#    PL = np.multiply( PL, air_mass[:,:,:38] )
-    
-    return  PL 
+    return arr
     
 
 def get_tropospheric_total_PL(netCDF_file, group_name, group_RMM):
@@ -236,9 +344,9 @@ def get_tropospheric_total_PL(netCDF_file, group_name, group_RMM):
     logging.debug("Getting the total tropsopheric PL for {variable}".format(variable=group_name))
 
     from .GC_funcs import get_tropospheric_PL
-    import numpy as np
     PL = get_tropospheric_PL( netCDF_file, group_name, group_RMM)
-    print PL.shape
+    if (len(PL.shape)==4):
+        PL = np.mean(PL, axis=0)
     PL = np.sum(PL)
 
     PL = float(PL)
@@ -246,6 +354,64 @@ def get_tropospheric_total_PL(netCDF_file, group_name, group_RMM):
 
     return PL
     
+def get_drydep(netCDF_file, species):
+    """
+    get the dry deposition rate in g/s
+    """
+    logging.debug("Getting the dry deposition for {variable}"\
+                .format(variable=species))
+
+    from .GC_funcs import get_variable_data
+    from .GC_funcs import get_species_rmm
+    
+    variable_name = "DRYD_FLX__{variable}df".format(variable=species)
+
+    # Get surface area [m2]
+    area = get_variable_data(netCDF_file, "DXYP__DXYP")
+
+    # Get molec/cm2/s
+    drydep = get_variable_data( netCDF_file, variable_name )
+    
+    # get molec/m2/s
+    drydep = np.multiply(drydep, 1E4)
+
+    # get molec/s
+    drydep = np.multiply( area, drydep )
+
+    # get moles/s
+    avagadro = 6.0221409e+23                                                    
+    drydep = np.divide( drydep, avagadro )    
+
+    # get g/s
+    species_rmm = get_species_rmm(species)
+    drydep = np.multiply( species_rmm, drydep)
+
+    return drydep 
+
+def get_annual_drydep( netCDF_file, group_name):
+    """
+    get the annual dry deposition rate in Tg/year,
+    """
+    logging.debug("Getting the annual dry deposition.")
+
+    from .GC_funcs import get_drydep
+
+    year = 365.25*24*60*60
+
+    drydep = get_drydep( netCDF_file, group_name)
+    # If time then average over time
+    if len(drydep.shape)==3:
+        drydep = np.mean(drydep, axis=0)#
+    total_drydep = np.sum(drydep)
+
+    # convert from per second to per year
+    total_drydep = np.multiply(total_drydep, year)
+    # convert from g to Tg
+    total_drydep = np.divide(total_drydep , 1E12)
+
+    return float(total_drydep)
+
+
     
 
 
